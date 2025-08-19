@@ -1,0 +1,20 @@
+input_folder: interim/
+output_folder: processed/dataset_v1
+
+output_storage: drive
+
+output_format: yolo
+
+split_datasets:
+  train:
+    cctv_people: 1.0
+    cctv_manual: 0.8
+    cctv_kaggle: 0.05
+  val:
+    cctv_manual: 0.2
+  test:
+    cctv_test: 1.0
+
+target_classes:
+  - female
+  - male

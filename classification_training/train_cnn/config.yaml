@@ -1,0 +1,53 @@
+# CNN Training Configuration
+dataset_folder: classification/people_v1/
+class_mapping: class_mapping.json
+
+# Model configuration
+model:
+  architecture: efficientnet_b0  # efficientnet_b0, efficientnet_b3, resnet50, resnet101
+  pretrained: true
+  num_classes: 3  # male, female, unknown
+  dropout: [0.1, 0.5]  # OPTUNA RANGE - High impact on overfitting
+
+project_name: demographic_classification_v1
+environment: colab
+
+# Training parameters
+training_params:
+  epochs: 50
+  batch_size: 32  # Fixed based on hardware
+  learning_rate: [1e-5, 1e-2]  # OPTUNA RANGE (log scale) - Highest impact
+  weight_decay: [1e-5, 1e-2]  # OPTUNA RANGE (log scale) - High impact on generalization
+  patience: 10
+  
+  # Optimizer settings
+  optimizer: [adamw, adam, sgd]  # OPTUNA CHOICE - Different convergence patterns
+  scheduler: cosine
+  warmup_epochs: [0, 10]  # OPTUNA RANGE - Important for training stability
+
+# Data augmentation  
+augmentation:
+  # EfficientNet specific - different variants use different input sizes
+  resize: 224  # If not provided, defined in context object creation
+  
+  random_rotation: [5, 25]  # OPTUNA RANGE - Balance augmentation vs distortion
+  random_flip: 0.5
+  color_jitter:
+    brightness: [0.0, 0.3]  # OPTUNA RANGE - Can help with lighting variation
+    contrast: [0.0, 0.3]    # OPTUNA RANGE
+    saturation: 0.1
+    hue: 0.05
+  normalize:
+    mean: [0.485, 0.456, 0.406]  # ImageNet stats
+    std: [0.229, 0.224, 0.225]
+
+# Validation settings
+validation:
+  # split_ratio: 0.2
+  metrics: [accuracy, f1_macro, precision_macro, recall_macro]
+  
+# Early stopping
+early_stopping:
+  monitor: val_accuracy
+  patience: 10
+  min_delta: 0.001
