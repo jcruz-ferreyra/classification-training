@@ -1,4 +1,5 @@
 import copy
+import json
 import logging
 from typing import Any, Dict, Tuple
 
@@ -169,7 +170,7 @@ def _train_trial_model(
     )
 
     # Train model using shared training loop (SHARED with final training)
-    val_metrics = train_model_loop(
+    best_val_metrics, _ = train_model_loop(
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
@@ -185,7 +186,7 @@ def _train_trial_model(
         trial=trial,  # For pruning support
     )
 
-    return val_metrics
+    return best_val_metrics
 
 
 def _log_trial_to_mlflow(
@@ -202,8 +203,8 @@ def _log_trial_to_mlflow(
         log_params(trial_number=trial.number)
 
         # Log trial metrics
-        log_metrics(split="val", **val_metrics)
-        log_metrics(split="trial", target_metric=target_metric)
+        log_metrics(split=None, **val_metrics)
+        log_metrics(split=None, target_metric=target_metric)
 
 
 def _run_optimization_trials(
@@ -288,6 +289,68 @@ def _run_optimization_trials(
         raise
 
 
+def _save_best_hyperparams(ctx: CNNHyperparamSearchContext, study: optuna.Study) -> None:
+    """
+    Extract and save best hyperparameters from completed Optuna study.
+
+    Args:
+        ctx: Context containing project configuration
+        study: Completed Optuna study
+
+    Returns:
+        Dictionary containing best hyperparameters
+    """
+    logger.info("Extracting and saving best hyperparameters from study")
+
+    if study.best_trial is None:
+        raise ValueError("No completed trials found in study")
+
+    best_trial = study.best_trial
+    best_params = best_trial.params
+    best_value = study.best_value
+
+    logger.info(f"Best trial #{best_trial.number}")
+    logger.info(f"Best {ctx.early_stopping['monitor']}: {best_value:.4f}")
+    logger.info(f"Best parameters: {best_params}")
+
+    # Create comprehensive results
+    optimization_results = {
+        "study_info": {
+            "best_trial_number": best_trial.number,
+            "best_value": best_value,
+            "monitored_metric": ctx.early_stopping["monitor"],
+            "total_trials": len(study.trials),
+            "completed_trials": len(
+                [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+            ),
+            "pruned_trials": len(
+                [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
+            ),
+            "failed_trials": len(
+                [t for t in study.trials if t.state == optuna.trial.TrialState.FAIL]
+            ),
+        },
+        "best_hyperparams": best_params,
+        "architecture": ctx.model_info["architecture"],
+        "experiment": ctx.project_name,
+    }
+
+    # Save to JSON file
+    results_path = ctx.project_dir / "optuna_studies" / "best_hyperparams.json"
+
+    try:
+        results_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(results_path, "w") as f:
+            json.dump(optimization_results, f, indent=2)
+
+        logger.info(f"Best hyperparameters saved to: {results_path}")
+
+    except Exception as e:
+        logger.error(f"Failed to save best hyperparameters: {e}")
+        raise
+
+
 def search_cnn_hyperparam(ctx: CNNHyperparamSearchContext) -> None:
     """
     Main function for CNN hyperparameter optimization using Optuna.
@@ -315,9 +378,6 @@ def search_cnn_hyperparam(ctx: CNNHyperparamSearchContext) -> None:
     _run_optimization_trials(ctx, study, class_info)
 
     # Extract and save best hyperparam
-    best_params = _extract_best_hyperparam(ctx, study)
-
-    # Log optimization results and study statistics
-    _log_optimization_results(ctx, study, best_params)
+    _save_best_hyperparams(ctx, study)
 
     logger.info("CNN hyperparameter search completed successfully")

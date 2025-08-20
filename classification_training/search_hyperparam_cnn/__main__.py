@@ -46,7 +46,7 @@ if missing_keys:
 DATASET_FOLDER = script_config["dataset_folder"]
 CLASS_MAPPING = script_config["class_mapping"]
 
-PROJECT_NAME = script_config["project_name"]
+PROJECT_VERSION = script_config["project_version"]
 
 MODEL_INFO = script_config["model_info"]
 TRAINING_PARAMS = script_config["training_params"]
@@ -78,7 +78,7 @@ context = CNNHyperparamSearchContext(
     dataset_folder=DATASET_FOLDER,
     class_mapping=CLASS_MAPPING,
     models_dir=MODELS_DIR,
-    project_name=PROJECT_NAME,
+    project_version=PROJECT_VERSION,
     model_info=MODEL_INFO,
     training_params=TRAINING_PARAMS,
     augmentation=AUGMENTATION,

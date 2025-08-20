@@ -2,12 +2,12 @@
 dataset_folder: processed/dataset_v1/
 class_mapping: class_mapping.json
 
-project_name: efficientnet_b0_v1
+project_version: development_v1
 environment: local
 
 # Model configuration
 model_info:
-  architecture: efficientnet_b0
+  architecture: efficientnet_b3
   pretrained: true
   # checkpoint: efficientnet_b0_v1/best.pt
   num_classes: 2
@@ -20,12 +20,11 @@ model_info:
 
 # Training parameters
 training_params:
-  n_trials: 50
-  epochs: 15
+  n_trials: 4
+  epochs: 12
   batch_size: 32 
   learning_rate: [1e-5, 1e-2]   # OPTUNA RANGE (log scale)
   weight_decay: [1e-5, 1e-2]    # OPTUNA RANGE (log scale)
-  patience: 10
 
   optimizer: [adamw, adam, sgd] # OPTUNA CHOICE
   warmup_epochs: 3
@@ -56,5 +55,5 @@ validation:
 # Early stopping
 early_stopping:
   monitor: val_accuracy
-  patience: 10
+  patience: 5
   min_delta: 0.001

@@ -10,7 +10,7 @@ class CNNHyperparamSearchContext:
     class_mapping: str
 
     models_dir: Path
-    project_name: str
+    project_version: str
 
     model_info: Dict[str, Any]
     training_params: Dict[str, Any]
@@ -28,6 +28,10 @@ class CNNHyperparamSearchContext:
     @property
     def dataset_dir(self) -> Path:
         return self.data_dir / self.dataset_folder
+
+    @property
+    def project_name(self) -> str:
+        return f"{self.model_info['architecture']}_{self.project_version}"
 
     @property
     def project_dir(self) -> Path:

@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 import optuna
 from sklearn.metrics import f1_score, precision_score, recall_score
@@ -148,7 +148,7 @@ def train_model_loop(
     metrics_callback: Optional[Callable] = None,
     save_dir: Optional[Path] = None,
     save_frequency: int = 1,
-) -> List[Dict[str, float]]:
+) -> Tuple[Dict[str, float], List[Dict[str, float]]]:
     """
     Shared training loop for CNN models.
 
@@ -234,7 +234,8 @@ def train_model_loop(
         logger.info(
             f"Train Loss: {train_metrics['train_loss']:.4f}, "
             f"Val Loss: {val_metrics['val_loss']:.4f}, "
-            f"Val Acc: {val_metrics['val_accuracy']:.4f}"
+            f"Val Acc: {val_metrics['val_accuracy']:.4f}, "
+            f"Val F1: {val_metrics['val_f1_macro']:.4f}"
         )
 
         # Custom metrics callback (for MLflow logging, etc.)
@@ -307,4 +308,4 @@ def train_model_loop(
         )
 
     logger.info("Training loop completed")
-    return history
+    return best_val_metrics, history

@@ -1,5 +1,6 @@
 import logging
 import re
+from typing import Optional
 
 import mlflow
 
@@ -49,7 +50,7 @@ def log_params(**params):
             logger.warning(f"Failed to log parameter {sanitized_name}: {e}")
 
 
-def log_metrics(split: str = "train", **metrics):
+def log_metrics(split: Optional[str] = None, **metrics):
     """Log metrics to MLflow with split prefix and validation."""
     for metric_name, metric_value in metrics.items():
         if not _check_metric_is_numeric(metric_value):
@@ -57,7 +58,10 @@ def log_metrics(split: str = "train", **metrics):
             continue
 
         # Add split prefix to metric name
-        full_metric_name = f"{split}_{metric_name}"
+        if split is None:
+            full_metric_name = metric_name
+        else:
+            full_metric_name = f"{split}_{metric_name}"
         sanitized_name = _sanitize_name(full_metric_name)
 
         try:
