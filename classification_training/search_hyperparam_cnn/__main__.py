@@ -30,7 +30,7 @@ script_config = load_config(CONFIG_PATH)
 required_keys = [
     "dataset_folder",
     "class_mapping",
-    "project_name",
+    "project_version",
     "environment",
     "model_info",
     "training_params",
