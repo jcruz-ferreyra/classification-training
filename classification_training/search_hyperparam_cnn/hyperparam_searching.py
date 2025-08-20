@@ -39,7 +39,7 @@ def _retrieve_and_unzip_data(ctx: CNNHyperparamSearchContext) -> None:
 
     # Copy zip file to colab
     src = ctx.dataset_dir.parent / zipfile_name
-    dst = colab_dataset_dir / zipfile_name
+    dst = colab_dataset_dir.parent / zipfile_name
 
     # Validate source file exists
     if not src.exists():
@@ -63,16 +63,12 @@ def _retrieve_and_unzip_data(ctx: CNNHyperparamSearchContext) -> None:
         logger.error(f"Failed to copy dataset zip file: {e}")
         raise
 
-    # Create extraction directory named after the dataset format
-    extraction_dir = colab_dataset_dir / "yolo"  # "yolo"
-    extraction_dir.mkdir(parents=True, exist_ok=True)
-
     try:
         logger.info(f"Extracting dataset to: {colab_data_dir}")
         start = time.time()
 
         with zipfile.ZipFile(dst, "r") as zip_ref:
-            zip_ref.extractall(extraction_dir)
+            zip_ref.extractall(colab_dataset_dir)
 
         extract_time = time.time() - start
 
