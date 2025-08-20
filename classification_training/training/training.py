@@ -6,6 +6,7 @@ import optuna
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from .criterion import create_criterion
 from .early_stopping import EarlyStopping
@@ -29,7 +30,10 @@ def _train_epoch(
     correct = 0
     total = 0
 
-    for batch_idx, (data, target) in enumerate(train_loader):
+    # Create progress bar for training batches
+    train_pbar = tqdm(train_loader, desc="Training", leave=False)
+
+    for data, target in train_pbar:
         data, target = data.to(device), target.to(device)
 
         optimizer.zero_grad()
@@ -39,9 +43,13 @@ def _train_epoch(
         optimizer.step()
 
         total_loss += loss.item()
-        pred = output.argmax(dim=1, keepdim=True)
-        correct += pred.eq(target.view_as(pred)).sum().item()
+        pred = output.argmax(dim=1)
+        correct += (pred == target).sum().item()
         total += target.size(0)
+
+        # Update progress bar with current metrics
+        current_accuracy = correct / total if total > 0 else 0.0
+        train_pbar.set_postfix({"Loss": f"{loss.item():.4f}", "Acc": f"{current_accuracy:.4f}"})
 
     avg_loss = total_loss / len(train_loader)
     accuracy = correct / total
@@ -66,8 +74,8 @@ def _validate_epoch(
             loss = criterion(output, target)
 
             total_loss += loss.item()
-            pred = output.argmax(dim=1, keepdim=True)
-            correct += pred.eq(target.view_as(pred)).sum().item()
+            pred = output.argmax(dim=1)
+            correct += (pred == target).sum().item()
             total += target.size(0)
 
     avg_loss = total_loss / len(val_loader)
@@ -85,6 +93,8 @@ def _save_checkpoint(
     checkpoint_path: Path,
 ) -> None:
     """Save complete model checkpoint for resuming training."""
+    # Ensure parent directory exists
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
 
     checkpoint = {
         "epoch": epoch,
@@ -121,6 +131,7 @@ def train_model_loop(
     trial: Optional[optuna.Trial] = None,
     metrics_callback: Optional[Callable] = None,
     save_dir: Optional[Path] = None,
+    save_frequency: int = 1,
 ) -> Dict[str, float]:
     """
     Shared training loop for CNN models.
@@ -142,6 +153,7 @@ def train_model_loop(
         trial: Optuna trial for pruning (optional)
         metrics_callback: Optional callback for custom metrics logging
         save_dir: Directory to save models (optional, saves to save_dir/weights/)
+        save_frequency: Frequency to save model checkpoints (in epochs)
 
     Returns:
         Dict of final validation metrics
@@ -166,7 +178,7 @@ def train_model_loop(
     scheduler = create_cosine_scheduler(optimizer, warmup_epochs, total_epochs)
 
     # Initialize loss function
-    criterion = create_criterion(label_smoothing)
+    criterion = create_criterion(label_smoothing, train_loader, use_class_weights=True)
 
     # Initialize early stopping
     early_stopping = EarlyStopping(
@@ -219,9 +231,15 @@ def train_model_loop(
 
         # Update best metrics and save best model
         monitor_value = val_metrics[early_stopping_monitor]
-        best_monitor_value = best_val_metrics.get(early_stopping_monitor, -float("inf"))
 
-        if monitor_value > best_monitor_value:
+        if early_stopping.higher_is_better:
+            best_monitor_value = best_val_metrics.get(early_stopping_monitor, -float("inf"))
+            improved = monitor_value > best_monitor_value
+        else:
+            best_monitor_value = best_val_metrics.get(early_stopping_monitor, float("inf"))
+            improved = monitor_value < best_monitor_value
+
+        if improved:
             best_val_metrics = val_metrics.copy()
             best_epoch = epoch + 1
 
@@ -236,10 +254,24 @@ def train_model_loop(
                     checkpoint_path=weights_dir / "best.pt",
                 )
 
+        # Save last model checkpoint
+        if save_dir is not None and (epoch + 1) % save_frequency == 0:
+            _save_checkpoint(
+                model=model,
+                optimizer=optimizer,
+                scheduler=scheduler,
+                epoch=epoch + 1,
+                metrics=val_metrics,
+                checkpoint_path=weights_dir / "last.pt",
+            )
+
         # Early stopping check
         if early_stopping(val_metrics):
             logger.info(f"Early stopping at epoch {epoch+1}")
             break
+
+    if save_dir is not None and best_epoch > 0:
+        logger.info(f"Best model saved from epoch {best_epoch}")
 
     # Save last model checkpoint
     if save_dir is not None:
@@ -251,9 +283,6 @@ def train_model_loop(
             metrics=val_metrics,
             checkpoint_path=weights_dir / "last.pt",
         )
-
-        logger.info(f"Best model saved from epoch {best_epoch}")
-        logger.info(f"Last model saved from epoch {epoch + 1}")
 
     logger.info("Training loop completed")
     return best_val_metrics
