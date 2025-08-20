@@ -2,6 +2,9 @@
 dataset_folder: processed/dataset_v1/
 class_mapping: class_mapping.json
 
+project_name: efficientnet_b0_v1
+environment: local
+
 # Model configuration
 model_info:
   architecture: efficientnet_b0
@@ -14,9 +17,6 @@ model_info:
     efficientnet_b3: [0, 7]     # OPTUNA RANGE
     resnet50: [0, 3]            # OPTUNA RANGE
     resnet101: [0, 4]           # OPTUNA RANGE
-
-project_name: efficientnet_b0_v1
-environment: local
 
 # Training parameters
 training_params:

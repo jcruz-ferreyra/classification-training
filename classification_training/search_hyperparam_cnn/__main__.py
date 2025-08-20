@@ -30,9 +30,9 @@ script_config = load_config(CONFIG_PATH)
 required_keys = [
     "dataset_folder",
     "class_mapping",
-    "model_info",
     "project_name",
     "environment",
+    "model_info",
     "training_params",
     "augmentation",
     "validation",
@@ -43,6 +43,12 @@ if missing_keys:
     logger.error(f"Missing required config keys: {missing_keys}")
     raise ValueError(f"Missing required config keys: {missing_keys}")
 
+DATASET_FOLDER = script_config["dataset_folder"]
+CLASS_MAPPING = script_config["class_mapping"]
+
+PROJECT_NAME = script_config["project_name"]
+
+MODEL_INFO = script_config["model_info"]
 TRAINING_PARAMS = script_config["training_params"]
 AUGMENTATION = script_config["augmentation"]
 VALIDATION = script_config["validation"]
@@ -58,12 +64,6 @@ elif ENVIRONMENT == "colab" and (DRIVE_DATA_DIR is None or DRIVE_MODELS_DIR is N
     raise ValueError(
         "Error accesing Drive directory. Try setting local storage or check provided drive path."
     )
-
-DATASET_FOLDER = script_config["dataset_folder"]
-CLASS_MAPPING = script_config["class_mapping"]
-
-MODEL_INFO = script_config["model_info"]
-PROJECT_NAME = script_config["project_name"]
 
 # Select data and models dir based on environment
 DATA_DIR = DRIVE_DATA_DIR if ENVIRONMENT == "colab" else DRIVE_DATA_DIR

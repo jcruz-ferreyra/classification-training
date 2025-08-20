@@ -54,7 +54,7 @@ def _create_optuna_study(ctx: CNNHyperparamSearchContext) -> optuna.Study:
             pruner=optuna.pruners.MedianPruner(
                 n_startup_trials=5,  # Don't prune first 5 trials
                 n_warmup_steps=10,  # Wait 10 epochs before pruning
-                interval_steps=5,  # Check pruning every 5 epochs
+                interval_steps=5,  # Check pruning every 2 epochs
             ),
         )
 
@@ -78,8 +78,6 @@ def _create_optuna_study(ctx: CNNHyperparamSearchContext) -> optuna.Study:
 
 def _get_trial_hyperparams(ctx: CNNHyperparamSearchContext, trial: optuna.Trial) -> Dict[str, Any]:
     """Create complete hyperparameter dictionary with trial suggestions and fixed values."""
-
-    # Deep copy all configuration sections
     hyperparams = {
         "model_info": copy.deepcopy(ctx.model_info),
         "training_params": copy.deepcopy(ctx.training_params),
@@ -299,7 +297,7 @@ def search_cnn_hyperparam(ctx: CNNHyperparamSearchContext) -> None:
     """
     logger.info("Starting CNN hyperparameter search")
 
-    # Validate dataset structure and class mappings (SHARED with train_cnn)
+    # Validate dataset structure and class mappings
     validate_training_setup(
         dataset_dir=ctx.dataset_dir,
         class_mapping_path=ctx.class_mapping_path,
@@ -307,19 +305,19 @@ def search_cnn_hyperparam(ctx: CNNHyperparamSearchContext) -> None:
         has_separate_val_split=ctx.validation.get("split_ratio") is None,
     )
 
-    # Load class mappings and dataset info (SHARED with train_cnn)
+    # Load class mappings and dataset info
     class_info = load_class_mappings(ctx.class_mapping_path)
 
-    # Setup Optuna study for hyperparameter optimization (SEARCH-SPECIFIC)
+    # Setup Optuna study for hyperparameter optimization
     study = _create_optuna_study(ctx)
 
-    # Run hyperparameter optimization trials (SEARCH-SPECIFIC)
+    # Run hyperparameter optimization trials
     _run_optimization_trials(ctx, study, class_info)
 
-    # Extract and save best hyperparam (SEARCH-SPECIFIC)
+    # Extract and save best hyperparam
     best_params = _extract_best_hyperparam(ctx, study)
 
-    # Log optimization results and study statistics (SEARCH-SPECIFIC)
+    # Log optimization results and study statistics
     _log_optimization_results(ctx, study, best_params)
 
     logger.info("CNN hyperparameter search completed successfully")

@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 def create_cosine_scheduler(optimizer, warmup_epochs: int, total_epochs: int):
     """Create learning rate scheduler with warmup support."""
 
-    logger.info(f"Creating cosine scheduler")
+    logger.info("Creating cosine scheduler")
     logger.info(f"Warmup epochs: {warmup_epochs}, Total epochs: {total_epochs}")
 
     if warmup_epochs > 0:
