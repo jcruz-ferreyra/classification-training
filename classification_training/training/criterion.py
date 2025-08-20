@@ -13,6 +13,7 @@ def create_criterion(
     label_smoothing: float,
     train_loader: Optional[DataLoader] = None,
     use_class_weights: bool = True,
+    device: str = "cpu",
 ) -> nn.Module:
     """
     Create loss function with optional class weights for imbalance handling.
@@ -33,6 +34,8 @@ def create_criterion(
         logger.info("Computing class weights from training data")
         class_weights = _compute_class_weights(train_loader)
         logger.info(f"Class weights: {class_weights}")
+
+        class_weights = class_weights.to(device)
 
     criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing, weight=class_weights)
 

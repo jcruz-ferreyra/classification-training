@@ -1,8 +1,9 @@
 import logging
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 import optuna
+from sklearn.metrics import f1_score, precision_score, recall_score
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -64,8 +65,8 @@ def _validate_epoch(
     model.eval()
 
     total_loss = 0.0
-    correct = 0
-    total = 0
+    all_preds = []
+    all_targets = []
 
     with torch.no_grad():
         for data, target in val_loader:
@@ -75,13 +76,28 @@ def _validate_epoch(
 
             total_loss += loss.item()
             pred = output.argmax(dim=1)
-            correct += (pred == target).sum().item()
-            total += target.size(0)
 
+            all_preds.extend(pred.cpu().numpy())
+            all_targets.extend(target.cpu().numpy())
+
+    # Calculate basic metrics
     avg_loss = total_loss / len(val_loader)
-    accuracy = correct / total
+    accuracy = sum(p == t for p, t in zip(all_preds, all_targets)) / len(all_preds)
 
-    return {"val_loss": avg_loss, "val_accuracy": accuracy}
+    # Calculate sklearn metrics
+    f1_macro = f1_score(all_targets, all_preds, average="macro")
+    f1_micro = f1_score(all_targets, all_preds, average="micro")  # Same as accuracy for multi-class
+    precision_macro = precision_score(all_targets, all_preds, average="macro")
+    recall_macro = recall_score(all_targets, all_preds, average="macro")
+
+    return {
+        "val_loss": avg_loss,
+        "val_accuracy": accuracy,
+        "val_f1_macro": f1_macro,
+        "val_f1_micro": f1_micro,
+        "val_precision_macro": precision_macro,
+        "val_recall_macro": recall_macro,
+    }
 
 
 def _save_checkpoint(
@@ -132,7 +148,7 @@ def train_model_loop(
     metrics_callback: Optional[Callable] = None,
     save_dir: Optional[Path] = None,
     save_frequency: int = 1,
-) -> Dict[str, float]:
+) -> List[Dict[str, float]]:
     """
     Shared training loop for CNN models.
 
@@ -178,7 +194,9 @@ def train_model_loop(
     scheduler = create_cosine_scheduler(optimizer, warmup_epochs, total_epochs)
 
     # Initialize loss function
-    criterion = create_criterion(label_smoothing, train_loader, use_class_weights=True)
+    criterion = create_criterion(
+        label_smoothing, train_loader, use_class_weights=True, device=device
+    )
 
     # Initialize early stopping
     early_stopping = EarlyStopping(
@@ -189,6 +207,8 @@ def train_model_loop(
 
     best_val_metrics = {}
     best_epoch = 0
+
+    history = []
 
     for epoch in range(total_epochs):
         logger.info(f"Epoch {epoch+1}/{total_epochs}")
@@ -207,6 +227,8 @@ def train_model_loop(
 
         # Combine metrics
         epoch_metrics = {**train_metrics, **val_metrics}
+        epoch_record = {"epoch": epoch + 1, **epoch_metrics}
+        history.append(epoch_record)
 
         # Log epoch results
         logger.info(
@@ -285,4 +307,4 @@ def train_model_loop(
         )
 
     logger.info("Training loop completed")
-    return best_val_metrics
+    return history
