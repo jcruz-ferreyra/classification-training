@@ -8,6 +8,7 @@ import mlflow
 import optuna
 from torch.utils.data import DataLoader
 
+from classification_training.colab import retrieve_and_unzip_data
 from classification_training.tracking import log_metrics, log_params
 from classification_training.training import (
     create_cnn_model,
@@ -20,81 +21,6 @@ from classification_training.training import (
 from .types import CNNHyperparamSearchContext
 
 logger = logging.getLogger(__name__)
-
-
-def _retrieve_and_unzip_data(ctx: CNNHyperparamSearchContext) -> None:
-    """Download and extract dataset from drive to colab local storage."""
-    logger.info("Starting dataset retrieval and extraction for Colab environment")
-
-    import shutil
-    import time
-    import zipfile
-
-    dataset_name = ctx.dataset_dir.name
-    zipfile_name = f"{dataset_name}.zip"
-
-    colab_data_dir = Path("/content/data")
-    colab_dataset_dir = colab_data_dir / ctx.dataset_folder
-    colab_dataset_dir.mkdir(parents=True, exist_ok=True)
-
-    # Copy zip file to colab
-    src = ctx.dataset_dir.parent / zipfile_name
-    dst = colab_dataset_dir.parent / zipfile_name
-
-    # Validate source file exists
-    if not src.exists():
-        logger.error(f"Source zip file not found: {src}")
-        raise FileNotFoundError(f"Dataset zip file not found: {src}")
-
-    try:
-        logger.info(f"Copying dataset from drive: {src}")
-        start = time.time()
-        shutil.copy2(src, dst)
-        copy_time = time.time() - start
-
-        # Log copy statistics
-        file_size_mb = src.stat().st_size / (1024 * 1024)
-        logger.info(
-            f"Copied {file_size_mb:.1f} MB in {copy_time:.2f} seconds "
-            f"({file_size_mb/copy_time:.1f} MB/s)"
-        )
-
-    except Exception as e:
-        logger.error(f"Failed to copy dataset zip file: {e}")
-        raise
-
-    try:
-        logger.info(f"Extracting dataset to: {colab_data_dir}")
-        start = time.time()
-
-        with zipfile.ZipFile(dst, "r") as zip_ref:
-            zip_ref.extractall(colab_dataset_dir)
-
-        extract_time = time.time() - start
-
-        # Count extracted files
-        extracted_files = len(list(colab_data_dir.rglob("*")))
-        logger.info(f"Extracted {extracted_files} files in {extract_time:.2f} seconds")
-
-    except zipfile.BadZipFile as e:
-        logger.error(f"Corrupted zip file: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"Failed to extract dataset: {e}")
-        raise
-
-    try:
-        # Clean up zip file to save space
-        dst.unlink()
-        logger.info("Cleaned up zip file to save space")
-
-    except Exception as e:
-        logger.warning(f"Failed to clean up zip file: {e}")
-
-    # Update context dataset directory
-    ctx.data_dir = colab_data_dir
-    logger.info(f"Updated dataset directory to: {ctx.dataset_dir}")
-    logger.info("Dataset retrieval and extraction completed successfully")
 
 
 def _create_optuna_study(ctx: CNNHyperparamSearchContext) -> optuna.Study:
@@ -438,7 +364,7 @@ def search_cnn_hyperparam(ctx: CNNHyperparamSearchContext) -> None:
 
     if ctx.environment == "colab":
         # Set up dataset in working directory and change dataset dir attribute in ctx
-        _retrieve_and_unzip_data(ctx)
+        ctx.data_dir = retrieve_and_unzip_data(ctx.dataset_dir, ctx.dataset_folder)
 
     # Validate dataset structure and class mappings
     validate_training_setup(

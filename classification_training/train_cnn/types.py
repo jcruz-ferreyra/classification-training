@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 
 @dataclass
@@ -10,9 +10,9 @@ class CNNTrainingContext:
     class_mapping: str
 
     models_dir: Path
-    project_name: str
+    project_version: str
 
-    model: Dict[str, Any]
+    model_info: Dict[str, Any]
     training_params: Dict[str, Any]
     augmentation: Dict[str, Any]
     validation: Dict[str, Any]
@@ -20,9 +20,18 @@ class CNNTrainingContext:
 
     environment: str
 
+    checkpoint: Optional[str] = None
+
+    def __post_init__(self):
+        self.models_dir.mkdir(parents=True, exist_ok=True)
+
     @property
     def dataset_dir(self) -> Path:
         return self.data_dir / self.dataset_folder
+
+    @property
+    def project_name(self) -> str:
+        return f"{self.model_info['architecture']}_{self.project_version}"
 
     @property
     def project_dir(self) -> Path:
@@ -45,9 +54,16 @@ class CNNTrainingContext:
         return self.dataset_dir / "test"
 
     @property
+    def checkpoint_path(self) -> Optional[Path]:
+        if self.checkpoint is None:
+            return None
+
+        return self.models_dir / self.checkpoint
+
+    @property
     def input_size(self) -> int:
         """Get model input size based on architecture."""
-        architecture = self.model["architecture"]
+        architecture = self.model_info["architecture"]
 
         # EfficientNet specific sizes
         efficientnet_sizes = {

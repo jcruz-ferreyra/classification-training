@@ -113,6 +113,20 @@ def load_class_mappings(class_mapping_path: Path) -> Dict[str, Any]:
         raise
 
 
+class GammaTransform:
+    """Apply random gamma correction to tensor images."""
+
+    def __init__(self, gamma_range: float):
+        self.gamma_range = gamma_range
+
+    def __call__(self, img: torch.Tensor) -> torch.Tensor:
+        if self.gamma_range <= 0:
+            return img
+        # Random gamma between (1-range, 1+range)
+        gamma = 1.0 + torch.rand(1).item() * 2 * self.gamma_range - self.gamma_range
+        return torch.pow(img.clamp(min=1e-8), gamma)
+
+
 def create_transforms(
     input_size: int, augmentation_config: Dict[str, Any], is_training: bool = True
 ) -> transforms.Compose:
@@ -129,20 +143,45 @@ def create_transforms(
     """
     transform_list = []
 
-    # Resize and crop
-    transform_list.extend(
-        [
-            transforms.Resize(input_size + 32),  # Slightly larger for random crop
-            (
-                transforms.CenterCrop(input_size)
-                if not is_training
-                else transforms.RandomCrop(input_size)
-            ),
-        ]
-    )
-
     if is_training:
-        # Training augmentations
+        # Scale and crop (handles variable input sizes)
+        scale_factor = augmentation_config.get("scale_factor", 0.0)
+        if scale_factor > 0:
+            scale_range = (1.0 - scale_factor, 1.0 + scale_factor)
+            transform_list.append(
+                transforms.RandomResizedCrop(input_size, scale=scale_range, ratio=(0.75, 1.33))
+            )
+        else:
+            # Default: resize to target size then random crop
+            transform_list.append(
+                transforms.RandomResizedCrop(input_size, scale=(0.8, 1.0), ratio=(0.75, 1.33))
+            )
+
+        # Perspective transform
+        perspective_prob = augmentation_config.get("perspective_probability", 0.0)
+        if perspective_prob > 0:
+            perspective_distortion = augmentation_config.get("perspective_distortion", 0.1)
+            transform_list.append(
+                transforms.RandomApply(
+                    [transforms.RandomPerspective(distortion_scale=perspective_distortion, p=1.0)],
+                    p=perspective_prob,
+                )
+            )
+
+        # Affine transformations (translate, shear)
+        translate_factor = augmentation_config.get("translate", 0.0)
+        shear_degrees = augmentation_config.get("shear", 0.0)
+
+        if translate_factor > 0 or shear_degrees > 0:
+            transform_list.append(
+                transforms.RandomAffine(
+                    degrees=0,  # Rotation handled separately
+                    translate=(
+                        (translate_factor, translate_factor) if translate_factor > 0 else None
+                    ),
+                    shear=(-shear_degrees, shear_degrees) if shear_degrees > 0 else None,
+                )
+            )
 
         # Random horizontal flip
         flip_prob = augmentation_config.get("random_flip", 0.5)
@@ -154,13 +193,24 @@ def create_transforms(
         if rotation_degrees > 0:
             transform_list.append(transforms.RandomRotation(degrees=rotation_degrees))
 
-        # Gaussian blur
+        # Motion blur
+        motion_blur_prob = augmentation_config.get("motion_blur_probability", 0.0)
+        if motion_blur_prob > 0:
+            motion_blur_kernel = augmentation_config.get("motion_blur_kernel", 5)
+            transform_list.append(
+                transforms.RandomApply(
+                    [transforms.GaussianBlur(kernel_size=motion_blur_kernel, sigma=(0.1, 2.0))],
+                    p=motion_blur_prob,
+                )
+            )
+
+        # Regular Gaussian blur
         blur_prob = augmentation_config.get("blur_probability", 0.0)
         if blur_prob > 0:
             transform_list.append(
-                transforms.RandomApply([
-                    transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0))
-                ], p=blur_prob)
+                transforms.RandomApply(
+                    [transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0))], p=blur_prob
+                )
             )
 
         # Color jitter
@@ -174,16 +224,37 @@ def create_transforms(
                     hue=color_jitter.get("hue", 0.0),
                 )
             )
+    else:
+        # Validation transforms (simple resize and center crop)
+        transform_list.extend(
+            [transforms.Resize(int(input_size * 1.05)), transforms.CenterCrop(input_size)]
+        )
 
-    # Convert to tensor and normalize (always applied)
-    transform_list.extend(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=augmentation_config["normalize"]["mean"],
-                std=augmentation_config["normalize"]["std"],
-            ),
-        ]
+    # Convert to tensor
+    transform_list.append(transforms.ToTensor())
+
+    if is_training:
+        # Gamma correction
+        gamma_factor = augmentation_config.get("gamma", 0.0)
+        if gamma_factor > 0:
+            transform_list.append(GammaTransform(gamma_factor))
+
+        # Random erasing (must be after ToTensor)
+        erasing_prob = augmentation_config.get("random_erasing_probability", 0.0)
+        if erasing_prob > 0:
+            erasing_scale = augmentation_config.get("random_erasing_scale", (0.02, 0.15))
+            transform_list.append(
+                transforms.RandomErasing(
+                    p=erasing_prob, scale=erasing_scale, ratio=(0.3, 3.3), value="random"
+                )
+            )
+
+    # Normalize (always applied last)
+    transform_list.append(
+        transforms.Normalize(
+            mean=augmentation_config["normalize"]["mean"],
+            std=augmentation_config["normalize"]["std"],
+        )
     )
 
     return transforms.Compose(transform_list)
@@ -197,7 +268,7 @@ def create_data_loaders(
     augmentation_config: Dict[str, Any],
     has_separate_val_split: bool = True,
     split_ratio: float = 0.2,
-    num_workers: int = 4,
+    num_workers: int = 2,
 ) -> Tuple[DataLoader, DataLoader]:
     """
     Create training and validation data loaders.
