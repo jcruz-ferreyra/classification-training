@@ -1,9 +1,14 @@
 import logging
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import optuna
-from sklearn.metrics import f1_score, precision_score, recall_score
+from sklearn.metrics import (
+    classification_report,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -86,7 +91,9 @@ def _validate_epoch(
 
     # Calculate sklearn metrics
     f1_macro = f1_score(all_targets, all_preds, average="macro")
-    f1_micro = f1_score(all_targets, all_preds, average="micro")  # Same as accuracy for multi-class
+    f1_micro = f1_score(
+        all_targets, all_preds, average="micro"
+    )  # Same as accuracy for multi-class
     precision_macro = precision_score(all_targets, all_preds, average="macro")
     recall_macro = recall_score(all_targets, all_preds, average="macro")
 
@@ -309,3 +316,112 @@ def train_model_loop(
 
     logger.info("Training loop completed")
     return best_val_metrics, history
+
+
+def eval_model_loop(
+    model: nn.Module,
+    test_loader: DataLoader,
+    class_names: List[str],
+    device: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Evaluation loop for CNN models on test dataset.
+
+    Args:
+        model: Trained PyTorch model to evaluate
+        test_loader: Test data loader
+        class_names: List of class names for reporting
+        device: Device to run evaluation on (auto-detect if None)
+
+    Returns:
+        Dict containing evaluation metrics and detailed results
+    """
+    logger.info("Starting model evaluation")
+
+    # Auto-detect device
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    model = model.to(device)
+    model.eval()
+    logger.info(f"Evaluating on device: {device}")
+
+    all_preds = []
+    all_targets = []
+    all_probs = []
+
+    # Run evaluation
+    with torch.no_grad():
+        test_pbar = tqdm(test_loader, desc="Evaluating", leave=False)
+
+        for data, target in test_pbar:
+            data, target = data.to(device), target.to(device)
+
+            # Forward pass
+            output = model(data)
+            probs = torch.softmax(output, dim=1)
+            pred = output.argmax(dim=1)
+
+            # Collect results
+            all_preds.extend(pred.cpu().numpy())
+            all_targets.extend(target.cpu().numpy())
+            all_probs.extend(probs.cpu().numpy())
+
+            # Update progress bar
+            batch_accuracy = (pred == target).float().mean().item()
+            test_pbar.set_postfix({"Acc": f"{batch_accuracy:.4f}"})
+
+    # Calculate metrics
+    accuracy = sum(p == t for p, t in zip(all_preds, all_targets)) / len(all_preds)
+    f1_macro = f1_score(all_targets, all_preds, average="macro")
+    f1_micro = f1_score(all_targets, all_preds, average="micro")
+    precision_macro = precision_score(all_targets, all_preds, average="macro")
+    recall_macro = recall_score(all_targets, all_preds, average="macro")
+
+    # Per-class metrics
+    f1_per_class = f1_score(all_targets, all_preds, average=None)
+    precision_per_class = precision_score(all_targets, all_preds, average=None)
+    recall_per_class = recall_score(all_targets, all_preds, average=None)
+
+    # Create detailed classification report
+    class_report = classification_report(
+        all_targets, all_preds, target_names=class_names, output_dict=True
+    )
+
+    # Compile results
+    eval_results = {
+        # Overall metrics
+        "test_accuracy": accuracy,
+        "test_f1_macro": f1_macro,
+        "test_f1_micro": f1_micro,
+        "test_precision_macro": precision_macro,
+        "test_recall_macro": recall_macro,
+        # Per-class metrics
+        "per_class_f1": dict(zip(class_names, f1_per_class)),
+        "per_class_precision": dict(zip(class_names, precision_per_class)),
+        "per_class_recall": dict(zip(class_names, recall_per_class)),
+        # Raw data for further analysis
+        "predictions": all_preds,
+        "targets": all_targets,
+        "probabilities": all_probs,
+        # Detailed report
+        "classification_report": class_report,
+        # Dataset info
+        "total_samples": len(all_targets),
+        "num_classes": len(class_names),
+        "class_names": class_names,
+    }
+
+    # Log summary results
+    logger.info("Evaluation completed")
+    logger.info(f"Test Accuracy: {accuracy:.4f}")
+    logger.info(f"Test F1 (macro): {f1_macro:.4f}")
+    logger.info(f"Test F1 (micro): {f1_micro:.4f}")
+
+    # Log per-class results
+    for i, class_name in enumerate(class_names):
+        logger.info(
+            f"{class_name}: F1={f1_per_class[i]:.4f}, Precision={precision_per_class[i]:.4f}, Recall={recall_per_class[i]:.4f}"
+        )
+
+    return eval_results

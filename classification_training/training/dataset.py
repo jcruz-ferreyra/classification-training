@@ -144,18 +144,14 @@ def create_transforms(
     transform_list = []
 
     if is_training:
-        # Scale and crop (handles variable input sizes)
-        scale_factor = augmentation_config.get("scale_factor", 0.0)
-        if scale_factor > 0:
-            scale_range = (1.0 - scale_factor, 1.0 + scale_factor)
-            transform_list.append(
-                transforms.RandomResizedCrop(input_size, scale=scale_range, ratio=(0.75, 1.33))
-            )
-        else:
-            # Default: resize to target size then random crop
-            transform_list.append(
-                transforms.RandomResizedCrop(input_size, scale=(0.8, 1.0), ratio=(0.75, 1.33))
-            )
+        scale_factor = augmentation_config.get("scale_factor", 0.05)
+        scale_range = (1.0 - scale_factor, 1.0)
+
+        # Resize the image to a similar size as expected before cropping
+        transform_list.extend([
+            transforms.Resize((input_size, input_size)),
+            transforms.RandomResizedCrop(input_size, scale=scale_range, ratio=(0.8, 1.2))
+        ])
 
         # Perspective transform
         perspective_prob = augmentation_config.get("perspective_probability", 0.0)
@@ -226,9 +222,7 @@ def create_transforms(
             )
     else:
         # Validation transforms (simple resize and center crop)
-        transform_list.extend(
-            [transforms.Resize(int(input_size * 1.05)), transforms.CenterCrop(input_size)]
-        )
+        transform_list.extend([transforms.Resize((input_size, input_size))])
 
     # Convert to tensor
     transform_list.append(transforms.ToTensor())
@@ -260,6 +254,37 @@ def create_transforms(
     return transforms.Compose(transform_list)
 
 
+def _validate_class_mapping(dataset, class_info: Dict[str, Any]) -> None:
+    """
+    Validate that dataset class mapping matches expected JSON mapping.
+
+    Args:
+        dataset: PyTorch dataset (ImageFolder or Subset)
+        class_info: Class information dict containing expected class_to_idx mapping
+    """
+    logger.debug("Validating class mapping consistency")
+
+    # Get the actual dataset (handle Subset wrapper)
+    active_dataset = dataset.dataset if hasattr(dataset, "dataset") else dataset
+
+    # Get PyTorch's automatic class mapping
+    pytorch_class_to_idx = active_dataset.class_to_idx
+    expected_class_to_idx = class_info["class_to_idx"]
+
+    # Check if mappings match exactly
+    for class_name, expected_idx in expected_class_to_idx.items():
+        pytorch_idx = pytorch_class_to_idx.get(class_name)
+        if pytorch_idx != expected_idx:
+            raise ValueError(
+                f"Class mapping mismatch for '{class_name}': "
+                f"JSON file has index {expected_idx}, but PyTorch assigned index {pytorch_idx}. "
+                f"Expected JSON mapping: {dict(sorted(pytorch_class_to_idx.items()))} "
+                f"(alphabetical order)"
+            )
+
+    logger.info("Class mapping validation passed - JSON matches PyTorch alphabetical order")
+
+
 def create_data_loaders(
     dataset_dir: Path,
     class_info: Dict[str, Any],
@@ -269,6 +294,7 @@ def create_data_loaders(
     has_separate_val_split: bool = True,
     split_ratio: float = 0.2,
     num_workers: int = 2,
+    eval_mode: bool = False,
 ) -> Tuple[DataLoader, DataLoader]:
     """
     Create training and validation data loaders.
@@ -288,84 +314,94 @@ def create_data_loaders(
     """
     logger.info("Creating data loaders")
 
-    # Create transforms
-    train_transforms = create_transforms(input_size, augmentation_config, is_training=True)
-    val_transforms = create_transforms(input_size, augmentation_config, is_training=False)
+    if eval_mode:
+        test_transforms = create_transforms(input_size, augmentation_config, is_training=False)
 
-    # Create datasets without forcing mapping
-    if has_separate_val_split:
-        train_dir = dataset_dir / "train"
-        val_dir = dataset_dir / "val"
+        # In eval mode, only create validation loader from test set
+        test_dir = dataset_dir / "test"
 
-        train_dataset = ImageFolder(root=str(train_dir), transform=train_transforms)
-        val_dataset = ImageFolder(root=str(val_dir), transform=val_transforms)
+        test_dataset = ImageFolder(root=str(test_dir), transform=test_transforms)
 
-        logger.info(
-            f"Loaded separate splits: {len(train_dataset)} train, {len(val_dataset)} val samples"
+        # Validate that JSON mapping matches PyTorch's alphabetical order
+        _validate_class_mapping(test_dataset, class_info)
+
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available(),
         )
+
+        logger.info(f"Created data loaders with batch size {batch_size}")
+        return test_loader
 
     else:
-        # Split train directory into train/val
-        train_dir = dataset_dir / "train"
+        # Create transforms
+        train_transforms = create_transforms(input_size, augmentation_config, is_training=True)
+        val_transforms = create_transforms(input_size, augmentation_config, is_training=False)
 
-        base_dataset = ImageFolder(root=str(train_dir), transform=None)
+        # Create datasets without forcing mapping
+        if has_separate_val_split:
+            train_dir = dataset_dir / "train"
+            val_dir = dataset_dir / "val"
 
-        # Calculate split sizes
-        total_size = len(base_dataset)
-        val_size = int(total_size * split_ratio)
-        train_size = total_size - val_size
+            train_dataset = ImageFolder(root=str(train_dir), transform=train_transforms)
+            val_dataset = ImageFolder(root=str(val_dir), transform=val_transforms)
 
-        # Split dataset
-        train_indices, val_indices = random_split(
-            range(total_size), [train_size, val_size], generator=torch.Generator().manual_seed(42)
-        )
-
-        # Create datasets with appropriate transforms
-        train_dataset = torch.utils.data.Subset(
-            ImageFolder(root=str(train_dir), transform=train_transforms), train_indices
-        )
-        val_dataset = torch.utils.data.Subset(
-            ImageFolder(root=str(train_dir), transform=val_transforms), val_indices
-        )
-
-        logger.info(
-            f"Split train directory: {len(train_dataset)} train, {len(val_dataset)} val samples"
-        )
-
-    # Validate that JSON mapping matches PyTorch's alphabetical order
-    active_dataset = train_dataset.dataset if hasattr(train_dataset, "dataset") else train_dataset
-    pytorch_class_to_idx = active_dataset.class_to_idx
-    expected_class_to_idx = class_info["class_to_idx"]
-
-    # Check if mappings match exactly
-    for class_name, expected_idx in expected_class_to_idx.items():
-        pytorch_idx = pytorch_class_to_idx.get(class_name)
-        if pytorch_idx != expected_idx:
-            raise ValueError(
-                f"Class mapping mismatch for '{class_name}': "
-                f"JSON file has index {expected_idx}, but PyTorch assigned index {pytorch_idx}. "
-                f"Expected JSON mapping: {dict(sorted(pytorch_class_to_idx.items()))} "
-                f"(alphabetical order)"
+            logger.info(
+                f"Loaded separate splits: {len(train_dataset)} train, {len(val_dataset)} val samples"
             )
 
-    logger.info("Class mapping validation passed - JSON matches PyTorch alphabetical order")
+        else:
+            # Split train directory into train/val
+            train_dir = dataset_dir / "train"
 
-    # Create data loaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=torch.cuda.is_available(),
-    )
+            base_dataset = ImageFolder(root=str(train_dir), transform=None)
 
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=torch.cuda.is_available(),
-    )
+            # Calculate split sizes
+            total_size = len(base_dataset)
+            val_size = int(total_size * split_ratio)
+            train_size = total_size - val_size
 
-    logger.info(f"Created data loaders with batch size {batch_size}")
-    return train_loader, val_loader
+            # Split dataset
+            train_indices, val_indices = random_split(
+                range(total_size),
+                [train_size, val_size],
+                generator=torch.Generator().manual_seed(42),
+            )
+
+            # Create datasets with appropriate transforms
+            train_dataset = torch.utils.data.Subset(
+                ImageFolder(root=str(train_dir), transform=train_transforms), train_indices
+            )
+            val_dataset = torch.utils.data.Subset(
+                ImageFolder(root=str(train_dir), transform=val_transforms), val_indices
+            )
+
+            logger.info(
+                f"Split train directory: {len(train_dataset)} train, {len(val_dataset)} val samples"
+            )
+
+        # Validate that JSON mapping matches PyTorch's alphabetical order
+        _validate_class_mapping(train_dataset, class_info)
+
+        # Create data loaders
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available(),
+        )
+
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available(),
+        )
+
+        logger.info(f"Created data loaders with batch size {batch_size}")
+        return train_loader, val_loader

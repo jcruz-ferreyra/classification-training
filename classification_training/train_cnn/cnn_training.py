@@ -195,6 +195,14 @@ def _train_cnn(ctx: CNNTrainingContext, class_info: Dict[str, Any]) -> None:
             # Log trial results to MLflow as independent run
             log_metrics(split=None, **best_val_metrics)
 
+            # Log model info (without uploading the file)
+            log_params(
+                best_model=ctx.project_dir / run_id / "weights" / "best.pt",
+                artifacts=ctx.project_dir / run_id,
+            )
+
+            log_tags(status="completed")
+
             df_history = pd.DataFrame(history)
             df_history.to_csv(ctx.project_dir / run_id / "result.csv", index=False)
 

@@ -1,0 +1,19 @@
+# CNN Training Configuration
+dataset_folder: processed/dataset_v2/
+class_mapping: class_mapping.json
+
+experiment: efficientnet_b0_v2_5
+
+environment: local
+
+# Eval configuration
+eval_config:
+  architecture: efficientnet_b0
+  pretrained: false
+  num_classes: 2
+  resize: 224  # If not provided, defined in context object creation
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+  batch_size: 32
+  metrics: [accuracy, f1_macro, precision_macro, recall_macro]
