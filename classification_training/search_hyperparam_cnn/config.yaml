@@ -7,7 +7,7 @@ environment: local
 
 # Model configuration
 model_info:
-  architecture: efficientnet_b3
+  architecture: resnet50
   pretrained: true
   # checkpoint: efficientnet_b0_v1/best.pt
   num_classes: 2
@@ -33,7 +33,6 @@ training_params:
 # Data augmentation  
 augmentation:
   # EfficientNet specific - different variants use different input sizes
-  resize: 224  # If not provided, defined in context object creation
   
   random_rotation: [5, 25]      # OPTUNA RANGE
   random_flip: 0.5

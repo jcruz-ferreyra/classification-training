@@ -4,7 +4,7 @@ from .dataset import create_data_loaders, load_class_mappings, validate_training
 from .early_stopping import EarlyStopping
 from .optimizer import create_optimizer
 from .scheduler import create_cosine_scheduler
-from .training import train_model_loop
+from .training import train_model_loop, eval_model_loop
 
 __all__ = [
     # Dataset utilities
@@ -23,4 +23,5 @@ __all__ = [
     "EarlyStopping",
     # Training loop
     "train_model_loop",
+    "eval_model_loop",
 ]

@@ -322,6 +322,7 @@ def eval_model_loop(
     model: nn.Module,
     test_loader: DataLoader,
     class_names: List[str],
+    threshold: float = 0.5,
     device: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
@@ -360,7 +361,10 @@ def eval_model_loop(
             # Forward pass
             output = model(data)
             probs = torch.softmax(output, dim=1)
-            pred = output.argmax(dim=1)
+
+            # Apply custom thresholding for binary classification
+            one_probs = probs[:, 1]
+            pred = (one_probs >= threshold).long()
 
             # Collect results
             all_preds.extend(pred.cpu().numpy())
@@ -397,19 +401,16 @@ def eval_model_loop(
         "test_precision_macro": precision_macro,
         "test_recall_macro": recall_macro,
         # Per-class metrics
-        "per_class_f1": dict(zip(class_names, f1_per_class)),
-        "per_class_precision": dict(zip(class_names, precision_per_class)),
-        "per_class_recall": dict(zip(class_names, recall_per_class)),
+        "test_per_class_f1": dict(zip(class_names, f1_per_class)),
+        "test_per_class_precision": dict(zip(class_names, precision_per_class)),
+        "test_per_class_recall": dict(zip(class_names, recall_per_class)),
         # Raw data for further analysis
-        "predictions": all_preds,
-        "targets": all_targets,
-        "probabilities": all_probs,
+        "test_predictions": all_preds,
+        "test_targets": all_targets,
+        "test_probabilities": all_probs,
         # Detailed report
         "classification_report": class_report,
         # Dataset info
-        "total_samples": len(all_targets),
-        "num_classes": len(class_names),
-        "class_names": class_names,
     }
 
     # Log summary results

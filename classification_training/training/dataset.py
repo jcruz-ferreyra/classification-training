@@ -239,7 +239,7 @@ def create_transforms(
             erasing_scale = augmentation_config.get("random_erasing_scale", (0.02, 0.15))
             transform_list.append(
                 transforms.RandomErasing(
-                    p=erasing_prob, scale=erasing_scale, ratio=(0.3, 3.3), value="random"
+                    p=erasing_prob, scale=erasing_scale, ratio=(0.3, 3.3), value=(0.485, 0.456, 0.406)
                 )
             )
 

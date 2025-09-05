@@ -65,6 +65,19 @@ class CNNEvaluationContext:
         # Default for ResNet and other architectures
         return self.eval_config.get("resize", 224)
 
+    @property
+    def threshold(self) -> float:
+        """Get model input size based on architecture."""
+        thresholds = self.eval_config.get("thresholds", {})
+        if thresholds:
+            architecture = self.eval_config["architecture"]
+            return thresholds.get(architecture, 0.5)
+
+        return 0.5
+
     def __post_init__(self):
         if not self.test_dir.exists():
             raise ValueError(f"Test directory does not exist: {self.test_dir}")
+
+        if not self.models_dir.exists():
+            raise ValueError(f"Test directory does not exist: {self.models_dir}")

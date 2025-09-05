@@ -78,8 +78,9 @@ def create_cnn_model(model_info: Dict[str, Any], checkpoint: Optional[Path] = No
         logger.info(f"Loading custom checkpoint from: {checkpoint}")
 
         try:
-            checkpoint = torch.load(checkpoint, map_location="cpu")
-            model.load_state_dict(checkpoint)
+            # Use weights_only=False for trusted checkpoints
+            checkpoint_data = torch.load(checkpoint, map_location="cpu", weights_only=False)
+            model.load_state_dict(checkpoint_data["model_state_dict"])
             logger.info("Custom checkpoint loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load checkpoint {checkpoint}: {e}")
@@ -92,7 +93,13 @@ def create_cnn_model(model_info: Dict[str, Any], checkpoint: Optional[Path] = No
     logger.info(f"Dropout rate: {model_info['dropout']:.3f}")
 
     # Apply layer freezing based on trial hyperparameters
-    _freeze_model_layers(model, model_info["frozen_layers"], model_info["architecture"])
+    if "frozen_layers" in model_info:
+        _freeze_model_layers(model, model_info["frozen_layers"], model_info["architecture"])
+
+        final_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        logger.info(f"Trainable parameters after freezing: {final_trainable:,}")
+    else:
+        logger.info("No layer freezing specified")
 
     final_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Trainable parameters after freezing: {final_trainable:,}")
