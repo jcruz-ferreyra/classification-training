@@ -338,6 +338,7 @@ def eval_model_loop(
         Dict containing evaluation metrics and detailed results
     """
     logger.info("Starting model evaluation")
+    logger.info(f"Class threshold set to: {threshold}")
 
     # Auto-detect device
     if device is None:

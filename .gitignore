@@ -1,5 +1,6 @@
 # Data
 /data/
+/reports/threshold_tweak
 
 # Notebooks
 notebooks/*
